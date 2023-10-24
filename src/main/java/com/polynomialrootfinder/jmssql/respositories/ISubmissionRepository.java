@@ -1,10 +1,12 @@
 package com.polynomialrootfinder.jmssql.respositories;
 
 import com.polynomialrootfinder.jmssql.models.*;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-public interface ISubmissionRepository {
+@Repository
+public interface ISubmissionRepository{
     // URL_____________________|_HTTP Method_|_Action
     //
     // api/submissions_________|_POST________|_Create A new submission
