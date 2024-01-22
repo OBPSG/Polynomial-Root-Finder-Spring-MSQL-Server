@@ -7,7 +7,7 @@ public class Polynomial {
 
     public List<PolynomialTerm> terms;
 
-    public class PolynomialTerm {
+    public static class PolynomialTerm {
         public double coefficient;
 
         public String variable;

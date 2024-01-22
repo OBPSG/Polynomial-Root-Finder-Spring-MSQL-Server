@@ -1,7 +1,28 @@
 package com.polynomialrootfinder.jmssql.models;
 
+import java.util.Date;
+
 public class Submission {
-    int userId;
+
+    public Date getTimeSubmitted() {
+        return timeSubmitted;
+    }
+
+    public void setTimeSubmitted(Date timeSubmitted) {
+        this.timeSubmitted = timeSubmitted;
+    }
+
+    public Date timeSubmitted;
+    public long getId() {
+        return Id;
+    }
+
+    public void setId(long id) {
+        Id = id;
+    }
+
+    long Id;
+    long userId;
     Polynomial inputPolynomial;
 
     public Submission(int userid, Polynomial polynomial) {
@@ -9,11 +30,11 @@ public class Submission {
         inputPolynomial = polynomial;
     };
 
-    public int getUserId() {
+    public long getUserId() {
         return userId;
     }
 
-    public void setUserId(int userId) {
+    public void setUserId(long userId) {
         this.userId = userId;
     }
 
