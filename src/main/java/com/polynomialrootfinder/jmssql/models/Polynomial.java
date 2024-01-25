@@ -1,5 +1,6 @@
 package com.polynomialrootfinder.jmssql.models;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class Polynomial {
@@ -48,6 +49,7 @@ public class Polynomial {
     }
 
     public Polynomial() {
+        this.terms = new ArrayList<>();
     }
 
     //Constructs a new Polynomial from a list of coefficients. They are assumed to be in descending order of exponent

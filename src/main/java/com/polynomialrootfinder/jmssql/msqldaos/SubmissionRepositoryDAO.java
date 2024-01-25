@@ -3,6 +3,7 @@ package com.polynomialrootfinder.jmssql.msqldaos;
 import com.polynomialrootfinder.jmssql.models.Polynomial;
 import com.polynomialrootfinder.jmssql.models.Submission;
 import com.polynomialrootfinder.jmssql.respositories.ISubmissionRepository;
+import org.apache.catalina.connector.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,10 +15,7 @@ import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Component;
 
-import java.sql.Date;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -89,18 +87,23 @@ public class SubmissionRepositoryDAO implements ISubmissionRepository {
             public Submission extractData(ResultSet rs) throws SQLException, DataAccessException {
                 Polynomial polynomial = new Polynomial();
                 int userId = 0;
+                Long submissionId = null;
                 Date timeSubmitted = null;
                 while(rs.next()) {
                     if(rs.getRow() == 1) {
                         userId = rs.getInt("UserID");
                         timeSubmitted = rs.getDate("TimeSubmitted");
                         polynomial.degree = rs.getInt("degree");
-                        polynomial.terms= new ArrayList<>();
+                        submissionId = rs.getLong("Id");
                     }
                     polynomial.terms.add(new PolynomialTermMapper().mapRow(rs, rs.getRow()));
                 }
+                if(submissionId == null){
+                    return null;
+                }
                 Submission submission = new Submission(userId, polynomial);
                 submission.timeSubmitted = timeSubmitted;
+                submission.setId(submissionId);
                 return submission;
             }
         });
@@ -114,16 +117,44 @@ public class SubmissionRepositoryDAO implements ISubmissionRepository {
 
     @Override
     public List<Submission> findRecent() {
-        String SubmissionsQuery = "SELECT Submissions.UserID, Submissions.TimeSubmitted, Polynomials.degree, PolynomialTerms.Coefficient, PolynomialTerms.Variable, PolynomialTerms.Exponent FROM Submissions\n" +
+        String SubmissionsQuery = "SELECT Submissions.Id, Submissions.UserID, Submissions.TimeSubmitted, Polynomials.Id as PolyId, Polynomials.degree, PolynomialTerms.Coefficient, PolynomialTerms.Variable, PolynomialTerms.Exponent FROM Submissions\n" +
                 "JOIN Polynomials ON Submissions.InputPolynomialId = Polynomials.Id\n" +
-                "Join PolynomialTerms on Polynomials.Id = PolynomialTerms.PolynomialID;";
+                "Join PolynomialTerms on Polynomials.Id = PolynomialTerms.PolynomialID\n" +
+                "WHERE Submissions.id IN (SELECT TOP 100 id from Submissions)\n" +
+                "ORDER BY Submissions.TimeSubmitted DESC;";
        List<Submission> polynomials = jdbctemplate.query(SubmissionsQuery, new ResultSetExtractor<List<Submission>>() {
            @Override
            public List<Submission> extractData(ResultSet rs) throws SQLException, DataAccessException {
-               return null;
+               List<Submission> SubmissionList = new ArrayList<>();
+               long submissionId = -1;
+               long candidateId = 0;
+               Submission currentSubmission;
+               Polynomial newPolynomial = null;
+               Timestamp timestamp = null;
+               while(rs.next()){
+                   candidateId = rs.getLong("Id");
+                   timestamp = rs.getTimestamp("TimeSubmitted");
+                   if(candidateId != submissionId){
+                       if(submissionId != -1){
+                           currentSubmission = new Submission(0, newPolynomial);
+                           currentSubmission.setId(rs.getLong("Id"));
+                           currentSubmission.timeSubmitted = timestamp;
+                           SubmissionList.add(currentSubmission);
+                       }
+                       submissionId = candidateId;
+                       newPolynomial = new Polynomial();
+                       newPolynomial.degree = rs.getInt("degree");
+                   }
+                   newPolynomial.terms.add(new PolynomialTermMapper().mapRow(rs, rs.getRow()));
+               }
+               currentSubmission = new Submission(0, newPolynomial);
+               currentSubmission.setId(candidateId);
+               currentSubmission.timeSubmitted = timestamp;
+               SubmissionList.add(currentSubmission);
+               return SubmissionList;
            }
        });
-       return null;
+       return polynomials;
     }
 
     @Override

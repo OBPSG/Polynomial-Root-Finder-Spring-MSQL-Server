@@ -2,8 +2,11 @@ package com.polynomialrootfinder.jmssql.endpoints;
 
 import com.polynomialrootfinder.jmssql.models.Submission;
 import com.polynomialrootfinder.jmssql.respositories.ISubmissionRepository;
+import org.apache.catalina.connector.Response;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 public class SubmissionController {
@@ -15,13 +18,19 @@ public class SubmissionController {
         this.repository = repository;
     }
 
-    @GetMapping(value = "/submissions")
+    @GetMapping(value = "api/submissions/")
     Submission RetrieveById(@RequestParam String id) {
-        return repository.findByID(Long.parseLong(id));
+        Submission result = repository.findByID(Long.parseLong(id));
+        if(result == null) throw new SubmissionNotFoundException(Long.parseLong(id));
+        else return result;
+
     }
 
+    @GetMapping(value = "api/submissions")
+    List<Submission> retrieveRecent(){return repository.findRecent();}
 
-    @PostMapping(value = "/submissions")
+
+    @PostMapping(value = "api/submissions")
     int createNew(@RequestBody Submission newSubmission) {
         return repository.save(newSubmission);
     }
