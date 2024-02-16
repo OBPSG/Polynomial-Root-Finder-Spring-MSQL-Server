@@ -9,15 +9,15 @@ public class Polynomial {
     public List<PolynomialTerm> terms;
 
     public static class PolynomialTerm {
-        public double coefficient;
+        public int coefficient;
 
         public String variable;
 
-        public double getCoefficient() {
+        public int getCoefficient() {
             return coefficient;
         }
 
-        public void setCoefficient(double coefficient) {
+        public void setCoefficient(int coefficient) {
             this.coefficient = coefficient;
         }
 
@@ -41,7 +41,7 @@ public class Polynomial {
 
         public PolynomialTerm() {
         }
-        public PolynomialTerm(double c, String v, int e) {
+        public PolynomialTerm(int c, String v, int e) {
             this.coefficient = c;
             this.variable = v;
             this.exponent = e;
@@ -54,10 +54,10 @@ public class Polynomial {
 
     //Constructs a new Polynomial from a list of coefficients. They are assumed to be in descending order of exponent
     //i.e. of the form ax^3 + bx^2 + cx + d, and zeroes should be included for terms of a power with no coefficient
-    public Polynomial(List<Double> coefficients, String variable) {
+    public Polynomial(List<Integer> coefficients, String variable) {
         this.degree = coefficients.size() - 1;
         int exponent = this.degree;
-        for(Double coefficient : coefficients){
+        for(Integer coefficient : coefficients){
             this.terms.add(new PolynomialTerm(coefficient, variable, exponent--));
         }
         terms.get(terms.size() - 1).variable = null;

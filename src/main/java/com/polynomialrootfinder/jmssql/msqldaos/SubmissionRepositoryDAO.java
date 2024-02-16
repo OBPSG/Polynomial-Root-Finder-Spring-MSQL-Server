@@ -1,6 +1,8 @@
 package com.polynomialrootfinder.jmssql.msqldaos;
 
+import com.polynomialrootfinder.jmssql.calculator.RationalZeroTheoremCalculator;
 import com.polynomialrootfinder.jmssql.models.Polynomial;
+import com.polynomialrootfinder.jmssql.models.RationalNumber;
 import com.polynomialrootfinder.jmssql.models.Submission;
 import com.polynomialrootfinder.jmssql.respositories.ISubmissionRepository;
 import org.apache.catalina.connector.Response;
@@ -23,7 +25,7 @@ import java.util.List;
 public class SubmissionRepositoryDAO implements ISubmissionRepository {
     private static final Logger logger = LoggerFactory.getLogger(SubmissionRepositoryDAO.class);
 
-    public class PolynomialTermMapper implements RowMapper<Polynomial.PolynomialTerm>{
+    public class PolynomialTermMapper implements RowMapper<Polynomial.PolynomialTerm> {
         @Override
         public Polynomial.PolynomialTerm mapRow(ResultSet rs, int rowNum) throws SQLException {
             Polynomial.PolynomialTerm newTerm = new Polynomial.PolynomialTerm();
@@ -34,7 +36,7 @@ public class SubmissionRepositoryDAO implements ISubmissionRepository {
         }
     }
 
-    public class PolynomialRSE implements ResultSetExtractor<Polynomial>{
+    public class PolynomialRSE implements ResultSetExtractor<Polynomial> {
 
         @Override
         public Polynomial extractData(ResultSet rs) throws SQLException, DataAccessException {
@@ -42,16 +44,24 @@ public class SubmissionRepositoryDAO implements ISubmissionRepository {
         }
     }
 
+    public class RationalNumberMapper implements RowMapper<RationalNumber> {
+        @Override
+        public RationalNumber mapRow(ResultSet rs, int rowNum) throws SQLException {
+            return new RationalNumber(rs.getInt("Numerator"), rs.getInt("Denominator"));
+        }
+    }
+
 
     @Autowired
     private JdbcTemplate jdbctemplate;
+
     @Override
     public int save(Submission submission) throws DataAccessException {
         jdbctemplate.update("INSERT INTO Polynomials VALUES (?)", (Integer) submission.getInputPolynomial().degree);
         //Get ID of record that was just inserted to use as foreign key
         //TODO(?) Create Helper Classes for getting SQL Identity Values (among other common tasks) Or use ExecuteAndReturnKey?
         Long PolyID = jdbctemplate.query("SELECT IDENT_CURRENT('Polynomials')", (ResultSetExtractor<Long>) rs -> {
-            if(rs.next()){
+            if (rs.next()) {
                 return rs.getLong(1);
             }
             return null;
@@ -72,7 +82,26 @@ public class SubmissionRepositoryDAO implements ISubmissionRepository {
             }
         });
 
+        RationalZeroTheoremCalculator RZTCalculator = new RationalZeroTheoremCalculator(submission.getInputPolynomial());
+        List<RationalNumber> PRZs = RZTCalculator.FindAllPossibleZeroes();
+
+        jdbctemplate.batchUpdate("INSERT INTO PossibleRationalZeroes (Numerator, Denominator, PolynomialId) VALUES (?, ?, ?)", new BatchPreparedStatementSetter() {
+            @Override
+            public void setValues(PreparedStatement ps, int i) throws SQLException {
+                ps.setInt(1, PRZs.get(i).getNumerator());
+                ps.setInt(2, PRZs.get(i).getDenominator());
+                ps.setLong(3, PolyID);
+            }
+
+            @Override
+            public int getBatchSize() {
+                return PRZs.size();
+            }
+        });
+
+
         jdbctemplate.update("INSERT INTO Submissions (UserID, InputPolynomialId, TimeSubmitted) VALUES (?, ?, ?)", (Object) 0, PolyID, new Date(System.currentTimeMillis()));
+        logger.info("Saving of polynomial with ID = " + PolyID + " completed");
         return 0;
     }
 
@@ -89,8 +118,8 @@ public class SubmissionRepositoryDAO implements ISubmissionRepository {
                 int userId = 0;
                 Long submissionId = null;
                 Date timeSubmitted = null;
-                while(rs.next()) {
-                    if(rs.getRow() == 1) {
+                while (rs.next()) {
+                    if (rs.getRow() == 1) {
                         userId = rs.getInt("UserID");
                         timeSubmitted = rs.getDate("TimeSubmitted");
                         polynomial.degree = rs.getInt("degree");
@@ -98,7 +127,7 @@ public class SubmissionRepositoryDAO implements ISubmissionRepository {
                     }
                     polynomial.terms.add(new PolynomialTermMapper().mapRow(rs, rs.getRow()));
                 }
-                if(submissionId == null){
+                if (submissionId == null) {
                     return null;
                 }
                 Submission submission = new Submission(userId, polynomial);
@@ -107,6 +136,14 @@ public class SubmissionRepositoryDAO implements ISubmissionRepository {
                 return submission;
             }
         });
+
+        SubmissionQuery = "SELECT * FROM Submissions \n" +
+                "JOIN Polynomials on Submissions.InputPolynomialId = Polynomials.Id\n" +
+                "Join PossibleRationalZeroes on Submissions.InputPolynomialId = PossibleRationalZeroes.PolynomialId\n" +
+                "Where Submissions.id = ?";
+
+        submission.PossibleRationalZeroes = jdbctemplate.query(SubmissionQuery, new Object[]{(Object) id}, new RationalNumberMapper());
+
         return submission;
     }
 
@@ -122,39 +159,77 @@ public class SubmissionRepositoryDAO implements ISubmissionRepository {
                 "Join PolynomialTerms on Polynomials.Id = PolynomialTerms.PolynomialID\n" +
                 "WHERE Submissions.id IN (SELECT TOP 100 id from Submissions)\n" +
                 "ORDER BY Submissions.TimeSubmitted DESC;";
-       List<Submission> polynomials = jdbctemplate.query(SubmissionsQuery, new ResultSetExtractor<List<Submission>>() {
-           @Override
-           public List<Submission> extractData(ResultSet rs) throws SQLException, DataAccessException {
-               List<Submission> SubmissionList = new ArrayList<>();
-               long submissionId = -1;
-               long candidateId = 0;
-               Submission currentSubmission;
-               Polynomial newPolynomial = null;
-               Timestamp timestamp = null;
-               while(rs.next()){
-                   candidateId = rs.getLong("Id");
-                   timestamp = rs.getTimestamp("TimeSubmitted");
-                   if(candidateId != submissionId){
-                       if(submissionId != -1){
-                           currentSubmission = new Submission(0, newPolynomial);
-                           currentSubmission.setId(rs.getLong("Id"));
-                           currentSubmission.timeSubmitted = timestamp;
-                           SubmissionList.add(currentSubmission);
-                       }
-                       submissionId = candidateId;
-                       newPolynomial = new Polynomial();
-                       newPolynomial.degree = rs.getInt("degree");
-                   }
-                   newPolynomial.terms.add(new PolynomialTermMapper().mapRow(rs, rs.getRow()));
-               }
-               currentSubmission = new Submission(0, newPolynomial);
-               currentSubmission.setId(candidateId);
-               currentSubmission.timeSubmitted = timestamp;
-               SubmissionList.add(currentSubmission);
-               return SubmissionList;
-           }
-       });
-       return polynomials;
+        List<Submission> submissionList = jdbctemplate.query(SubmissionsQuery, new ResultSetExtractor<List<Submission>>() {
+            @Override
+            public List<Submission> extractData(ResultSet rs) throws SQLException, DataAccessException {
+                List<Submission> SubmissionList = new ArrayList<>();
+                long submissionId = -1;
+                long currentId = -1;
+                Submission currentSubmission = null;
+                Polynomial newPolynomial = null;
+                Timestamp timestamp = null;
+                while (rs.next()) {
+                    //Special actions for beginning of result set
+                    if(currentSubmission == null)
+                    {
+                        currentId = rs.getLong("Id");
+                        currentSubmission = new Submission(0, new Polynomial());
+                        currentSubmission.setId(currentId);
+                        currentSubmission.setTimeSubmitted(rs.getTimestamp("TimeSubmitted"));
+                        newPolynomial = new Polynomial();
+                        newPolynomial.degree = rs.getInt("degree");
+                    }
+                    //Check if we've reached the end of the subset for the current submission
+                    if(currentId != rs.getLong("Id")){
+                        currentSubmission.setInputPolynomial(newPolynomial);
+                        SubmissionList.add(currentSubmission);
+                        currentId = rs.getLong("Id");
+                        currentSubmission = new Submission(0, new Polynomial());
+                        currentSubmission.setId(currentId);
+                        currentSubmission.setTimeSubmitted(rs.getTimestamp("TimeSubmitted"));
+                        newPolynomial = new Polynomial();
+                        newPolynomial.degree = rs.getInt("degree");
+                    }
+                    newPolynomial.terms.add( new PolynomialTermMapper().mapRow(rs, rs.getRow()));
+                }
+                currentSubmission = new Submission(0, newPolynomial);
+                currentSubmission.setId(currentId);
+                currentSubmission.timeSubmitted = timestamp;
+                SubmissionList.add(currentSubmission);
+                return SubmissionList;
+            }
+        });
+
+
+        SubmissionsQuery = "SELECT Submissions.id, Polynomials.Id AS PolyID, Numerator, Denominator FROM Submissions \n" +
+                "JOIN Polynomials on Submissions.InputPolynomialId = Polynomials.Id\n" +
+                "Join PossibleRationalZeroes on Submissions.InputPolynomialId = PossibleRationalZeroes.PolynomialId\n" +
+                "Where Submissions.id IN (SELECT TOP 100 id from Submissions)\n" +
+                "ORDER BY Submissions.TimeSubmitted DESC;";
+
+        List<PRZListSubmissionPair> PRZBigList = jdbctemplate.query(SubmissionsQuery, new ResultSetExtractor<List<PRZListSubmissionPair>>() {
+            @Override
+            public List<PRZListSubmissionPair> extractData(ResultSet rs) throws SQLException, DataAccessException {
+                List<PRZListSubmissionPair> BigList = new ArrayList<>();
+                while (rs.next()) {
+                    PRZListSubmissionPair newPair = new PRZListSubmissionPair(rs.getLong("id"),
+                            new RationalNumber(rs.getInt("Numerator"), rs.getInt("Denominator")));
+                    BigList.add(newPair);
+                }
+                return BigList;
+            }
+        });
+
+        for (Submission submission : submissionList) {
+            for(PRZListSubmissionPair pair: PRZBigList){
+                if(submission.getId() == pair.SubmissionId())
+                {
+                    submission.PossibleRationalZeroes.add(pair.rn());
+                }
+            }
+        }
+
+        return submissionList;
     }
 
     @Override
@@ -166,4 +241,7 @@ public class SubmissionRepositoryDAO implements ISubmissionRepository {
     public int DeleteSubmission(long submissionToDeleteId) {
         return 0;
     }
+
 }
+
+record PRZListSubmissionPair(Long SubmissionId, RationalNumber rn){};

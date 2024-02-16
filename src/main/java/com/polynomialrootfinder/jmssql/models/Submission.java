@@ -1,6 +1,8 @@
 package com.polynomialrootfinder.jmssql.models;
 
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
 public class Submission {
 
@@ -28,7 +30,10 @@ public class Submission {
     public Submission(int userid, Polynomial polynomial) {
         userId = userid;
         inputPolynomial = polynomial;
+        PossibleRationalZeroes = new ArrayList<>();
     };
+
+    public List<RationalNumber> PossibleRationalZeroes;
 
     public long getUserId() {
         return userId;
