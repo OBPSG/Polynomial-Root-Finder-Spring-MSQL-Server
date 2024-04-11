@@ -1,15 +1,15 @@
 package com.polynomialrootfinder.jmssql.msqldaos;
 
+import com.polynomialrootfinder.jmssql.calculator.QuadraticFormulaCalculator;
 import com.polynomialrootfinder.jmssql.calculator.RationalZeroTheoremCalculator;
+import com.polynomialrootfinder.jmssql.calculator.SyntheticDivisionCalculator;
 import com.polynomialrootfinder.jmssql.models.Polynomial;
 import com.polynomialrootfinder.jmssql.models.RationalNumber;
 import com.polynomialrootfinder.jmssql.models.Submission;
 import com.polynomialrootfinder.jmssql.respositories.ISubmissionRepository;
-import org.apache.catalina.connector.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Bean;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.BatchPreparedStatementSetter;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -56,53 +56,80 @@ public class SubmissionRepositoryDAO implements ISubmissionRepository {
     private JdbcTemplate jdbctemplate;
 
     @Override
-    public int save(Submission submission) throws DataAccessException {
-        jdbctemplate.update("INSERT INTO Polynomials VALUES (?)", (Integer) submission.getInputPolynomial().degree);
+    public Submission save(Polynomial inputPolynomial) throws DataAccessException {
+        Polynomial normalizedPolynomial = inputPolynomial;
+        normalizedPolynomial.Normalize();
+
+        Submission result = new Submission(0, normalizedPolynomial);
+
+//        jdbctemplate.update("INSERT INTO Polynomials VALUES (?)", (Integer) inputPolynomial.degree);
         //Get ID of record that was just inserted to use as foreign key
         //TODO(?) Create Helper Classes for getting SQL Identity Values (among other common tasks) Or use ExecuteAndReturnKey?
+/*
         Long PolyID = jdbctemplate.query("SELECT IDENT_CURRENT('Polynomials')", (ResultSetExtractor<Long>) rs -> {
             if (rs.next()) {
                 return rs.getLong(1);
             }
             return null;
         });
+*/
 
-        jdbctemplate.batchUpdate("INSERT INTO PolynomialTerms (Coefficient, Variable, Exponent, PolynomialID) VALUES (?, ?, ?, ?)", new BatchPreparedStatementSetter() {
+       /* jdbctemplate.batchUpdate("INSERT INTO PolynomialTerms (Coefficient, Variable, Exponent, PolynomialID) VALUES (?, ?, ?, ?)", new BatchPreparedStatementSetter() {
             @Override
             public void setValues(PreparedStatement ps, int i) throws SQLException {
-                ps.setDouble(1, submission.getInputPolynomial().terms.get(i).getCoefficient());
-                ps.setString(2, submission.getInputPolynomial().terms.get(i).getVariable());
-                ps.setInt(3, submission.getInputPolynomial().terms.get(i).getExponent());
+                ps.setDouble(1, inputPolynomial.terms.get(i).getCoefficient());
+                ps.setString(2, inputPolynomial.terms.get(i).getVariable());
+                ps.setInt(3, inputPolynomial.terms.get(i).getExponent());
                 ps.setLong(4, PolyID);
             }
 
             @Override
             public int getBatchSize() {
-                return submission.getInputPolynomial().terms.size();
+                return inputPolynomial.terms.size();
             }
-        });
+        });*/
 
-        RationalZeroTheoremCalculator RZTCalculator = new RationalZeroTheoremCalculator(submission.getInputPolynomial());
+        RationalZeroTheoremCalculator RZTCalculator = new RationalZeroTheoremCalculator(normalizedPolynomial);
         List<RationalNumber> PRZs = RZTCalculator.FindAllPossibleZeroes();
+        result.PossibleRationalZeroes = PRZs;
 
-        jdbctemplate.batchUpdate("INSERT INTO PossibleRationalZeroes (Numerator, Denominator, PolynomialId) VALUES (?, ?, ?)", new BatchPreparedStatementSetter() {
+        /*jdbctemplate.batchUpdate("INSERT INTO PossibleRationalZeroes (Numerator, Denominator, PolynomialId) VALUES (?, ?, ?)", new BatchPreparedStatementSetter() {
             @Override
             public void setValues(PreparedStatement ps, int i) throws SQLException {
                 ps.setInt(1, PRZs.get(i).getNumerator());
                 ps.setInt(2, PRZs.get(i).getDenominator());
                 ps.setLong(3, PolyID);
             }
-
             @Override
             public int getBatchSize() {
                 return PRZs.size();
             }
-        });
+        });*/
+
+        SyntheticDivisionCalculator SDCalculator =  new SyntheticDivisionCalculator();
+        ArrayList<SyntheticDivisionCalculator.DivisionSequenceResultPair> DivisionResults = SDCalculator.DivideTestingAllZeroes(normalizedPolynomial, PRZs);
+        for(SyntheticDivisionCalculator.DivisionSequenceResultPair DivisionResult: DivisionResults) {
+            result.FactoredZeroes.add(DivisionResult.finalZero);
+            result.IntermediatePolynomials.add(DivisionResult.reducedPolynomial);
+        }
+
+        Polynomial finalPolynomial = result.IntermediatePolynomials.get(result.IntermediatePolynomials.size() - 1);
+
+        if (finalPolynomial.degree == 2)
+        {
+            QuadraticFormulaCalculator calculator = new QuadraticFormulaCalculator(
+                  finalPolynomial.terms.get(0).getCoefficient(),
+                  finalPolynomial.terms.get(1).getCoefficient(),
+                  finalPolynomial.terms.get(2).getCoefficient()
+            );
+
+            result.QuadraticSolutionPair = calculator.Calculate();
+        }
 
 
-        jdbctemplate.update("INSERT INTO Submissions (UserID, InputPolynomialId, TimeSubmitted) VALUES (?, ?, ?)", (Object) 0, PolyID, new Date(System.currentTimeMillis()));
-        logger.info("Saving of polynomial with ID = " + PolyID + " completed");
-        return 0;
+        /*jdbctemplate.update("INSERT INTO Submissions (UserID, InputPolynomialId, TimeSubmitted) VALUES (?, ?, ?)", (Object) 0, PolyID, new Date(System.currentTimeMillis()));
+        logger.info("Saving of polynomial with ID = " + PolyID + " completed");*/
+        return result;
     }
 
     @Override

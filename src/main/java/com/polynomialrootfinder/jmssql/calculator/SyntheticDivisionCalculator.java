@@ -4,13 +4,12 @@ import com.polynomialrootfinder.jmssql.models.Polynomial;
 import com.polynomialrootfinder.jmssql.models.RationalNumber;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
 
 public class SyntheticDivisionCalculator {
 
-    public List<DivisionSequenceResultPair> DivideTestingAllZeroes (Polynomial initialPolynomial, List<RationalNumber> possibleZeroes){
+    public ArrayList<DivisionSequenceResultPair> DivideTestingAllZeroes (Polynomial initialPolynomial, List<RationalNumber> possibleZeroes){
         ArrayList<DivisionSequenceResultPair> result =  new ArrayList<>();
         Polynomial currentPolynomial = initialPolynomial;
         ListIterator<RationalNumber> iterator = possibleZeroes.listIterator();
@@ -19,9 +18,9 @@ public class SyntheticDivisionCalculator {
         while( currentPolynomial.degree > 2){
 
             DivisionResultPair divisionTestResult = testDivide(currentPolynomial, testZero);
-            if(divisionTestResult.remainder - 0.0 <= 0.0001){
+            if(Math.abs(divisionTestResult.remainder - 0.0) <= 0.0001){
                 result.add(new DivisionSequenceResultPair(testZero, divisionTestResult.getResultPolynomial()));
-                currentPolynomial = divisionTestResult.resultPolynomial;
+                currentPolynomial = divisionTestResult.getResultPolynomial();
             }
             //Because a zero can have multiplicity, we must repeatedly check if it can be factored out
             //So only advance the iterator if the division remainder is not zero

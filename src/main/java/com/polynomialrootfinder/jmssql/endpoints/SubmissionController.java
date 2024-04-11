@@ -1,5 +1,6 @@
 package com.polynomialrootfinder.jmssql.endpoints;
 
+import com.polynomialrootfinder.jmssql.models.Polynomial;
 import com.polynomialrootfinder.jmssql.models.Submission;
 import com.polynomialrootfinder.jmssql.respositories.ISubmissionRepository;
 import org.apache.catalina.connector.Response;
@@ -31,7 +32,7 @@ public class SubmissionController {
 
 
     @PostMapping(value = "api/submissions")
-    int createNew(@RequestBody Submission newSubmission) {
-        return repository.save(newSubmission);
+    Submission createNew(@RequestBody Polynomial inputPolynomial) {
+        return repository.save(inputPolynomial);
     }
 }

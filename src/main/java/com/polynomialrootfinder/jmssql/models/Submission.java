@@ -1,8 +1,11 @@
 package com.polynomialrootfinder.jmssql.models;
 
+import com.polynomialrootfinder.jmssql.calculator.QuadraticFormulaCalculator;
+
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+
 
 public class Submission {
 
@@ -27,10 +30,14 @@ public class Submission {
     long userId;
     Polynomial inputPolynomial;
 
+    public QuadraticFormulaCalculator.SolutionPair QuadraticSolutionPair;
+
     public Submission(int userid, Polynomial polynomial) {
         userId = userid;
         inputPolynomial = polynomial;
         PossibleRationalZeroes = new ArrayList<>();
+        FactoredZeroes = new ArrayList<>();
+        IntermediatePolynomials = new ArrayList<>();
     };
 
     public List<RationalNumber> PossibleRationalZeroes;
@@ -50,4 +57,9 @@ public class Submission {
     public void setInputPolynomial(Polynomial inputPolynomial) {
         this.inputPolynomial = inputPolynomial;
     }
+
+    public ArrayList<Polynomial> IntermediatePolynomials;
+
+    public ArrayList<RationalNumber> FactoredZeroes;
+
 }
