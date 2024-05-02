@@ -10,7 +10,7 @@ public interface ISubmissionRepository{
     // URL_____________________|_HTTP Method_|_Action
     //
     // api/submissions_________|_POST________|_Create A new submission
-    Submission save(Polynomial inputPolynomial);
+    Boolean save(Submission submission);
 
     // api/submissions/:id?____|_GET_________|_Find a submission by ID
     Submission findByID(long id);

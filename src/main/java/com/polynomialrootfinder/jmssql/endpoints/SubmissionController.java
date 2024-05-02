@@ -1,12 +1,18 @@
 package com.polynomialrootfinder.jmssql.endpoints;
 
+import com.polynomialrootfinder.jmssql.calculator.QuadraticFormulaCalculator;
+import com.polynomialrootfinder.jmssql.calculator.RationalZeroTheoremCalculator;
+import com.polynomialrootfinder.jmssql.calculator.SyntheticDivisionCalculator;
 import com.polynomialrootfinder.jmssql.models.Polynomial;
+import com.polynomialrootfinder.jmssql.models.RationalNumber;
 import com.polynomialrootfinder.jmssql.models.Submission;
 import com.polynomialrootfinder.jmssql.respositories.ISubmissionRepository;
 import org.apache.catalina.connector.Response;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 @RestController
@@ -33,6 +39,37 @@ public class SubmissionController {
 
     @PostMapping(value = "api/submissions")
     Submission createNew(@RequestBody Polynomial inputPolynomial) {
-        return repository.save(inputPolynomial);
+        Polynomial normalizedPolynomial = inputPolynomial;
+        normalizedPolynomial.Normalize();
+
+        Submission result = new Submission(0, normalizedPolynomial);
+        result.setTimeSubmitted(new Date());
+
+        RationalZeroTheoremCalculator RZTCalculator = new RationalZeroTheoremCalculator(normalizedPolynomial);
+        List<RationalNumber> PRZs = RZTCalculator.FindAllPossibleZeroes();
+        result.PossibleRationalZeroes = PRZs;
+
+        SyntheticDivisionCalculator SDCalculator =  new SyntheticDivisionCalculator();
+        ArrayList<SyntheticDivisionCalculator.DivisionSequenceResultPair> DivisionResults = SDCalculator.DivideTestingAllZeroes(normalizedPolynomial, PRZs);
+        for(SyntheticDivisionCalculator.DivisionSequenceResultPair DivisionResult: DivisionResults) {
+            result.FactoredZeroes.add(DivisionResult.finalZero);
+            result.IntermediatePolynomials.add(DivisionResult.reducedPolynomial);
+        }
+
+        Polynomial finalPolynomial = result.IntermediatePolynomials.get(result.IntermediatePolynomials.size() - 1);
+
+        if (finalPolynomial.degree == 2)
+        {
+            QuadraticFormulaCalculator calculator = new QuadraticFormulaCalculator(
+                    finalPolynomial.terms.get(0).getCoefficient(),
+                    finalPolynomial.terms.get(1).getCoefficient(),
+                    finalPolynomial.terms.get(2).getCoefficient()
+            );
+
+            result.QuadraticSolutionPair = calculator.Calculate();
+        }
+
+        repository.save(result);
+        return result;
     }
 }
