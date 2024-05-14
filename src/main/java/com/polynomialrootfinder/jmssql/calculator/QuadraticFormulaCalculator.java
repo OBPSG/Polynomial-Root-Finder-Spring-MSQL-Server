@@ -4,11 +4,7 @@ import com.polynomialrootfinder.jmssql.models.ComplexNumber;
 
 import java.util.ArrayList;
 
-enum QuadraticFormulaSolutionType{
-    TWO_REAL,
-    ONE_REAL,
-    TWO_COMPLEX
-};
+;
 
 public class QuadraticFormulaCalculator {
     public double a, b, c;

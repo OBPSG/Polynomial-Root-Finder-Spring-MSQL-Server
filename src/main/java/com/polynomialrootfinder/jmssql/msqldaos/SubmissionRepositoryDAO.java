@@ -1,6 +1,7 @@
 package com.polynomialrootfinder.jmssql.msqldaos;
 
 import com.polynomialrootfinder.jmssql.calculator.QuadraticFormulaCalculator;
+import com.polynomialrootfinder.jmssql.calculator.QuadraticFormulaSolutionType;
 import com.polynomialrootfinder.jmssql.calculator.RationalZeroTheoremCalculator;
 import com.polynomialrootfinder.jmssql.calculator.SyntheticDivisionCalculator;
 import com.polynomialrootfinder.jmssql.models.Polynomial;
@@ -11,12 +12,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
-import org.springframework.jdbc.core.BatchPreparedStatementSetter;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.ResultSetExtractor;
-import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.*;
+import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Repository;
 
+import javax.sql.DataSource;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -55,40 +58,97 @@ public class SubmissionRepositoryDAO implements ISubmissionRepository {
     @Autowired
     private JdbcTemplate jdbctemplate;
 
-    @Override
-    public Boolean save(Submission submission) throws DataAccessException {
-        jdbctemplate.update("INSERT INTO Polynomials (Degree) VALUES (?)", submission.getInputPolynomial().degree);
-        //Get ID of record that was just inserted to use as foreign key
-        //TODO(?) Create Helper Classes for getting SQL Identity Values (among other common tasks) Or use ExecuteAndReturnKey?
 
-        Long PolyID = jdbctemplate.query("SELECT IDENT_CURRENT('Polynomials')", (ResultSetExtractor<Long>) rs -> {
-            if (rs.next()) {
-                return rs.getLong(1);
+
+    //Helper function for saving a single polynomial
+    //The Factoring Sequence Position parameter can be obtained from the polynomial's position in the parent submission's list,
+    //While the Solution Factor for this polynomial can be extracted from the corresponding position in the Factored Zeroes list
+    private Long polynomialSave(Polynomial polynomial,
+                                   Long SubmissionId,
+                                   Boolean isIntermediate,
+                                   Integer FactoringSequencePosition,
+                                   RationalNumber Solution) throws DataAccessException {
+        //Insert polynomial first, then use returned key to insert the terms
+        String polynomialInsertSQL = "INSERT INTO Polynomials (Degree, SubmissionId, IsIntermediate, FactoringSequenceNumber, " +
+                "FactorNumerator, FactorDenominator) VALUES (?, ?, ?, ?, ?, ?)";
+        String polynomialTermInsertSQL = "INSERT INTO PolynomialTerms (Coefficient, Variable, Exponent, PolynomialID) VALUES (?, ?, ?, ?)";
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbctemplate.update(con -> {
+            PreparedStatement ps = con.prepareStatement(polynomialInsertSQL, Statement.RETURN_GENERATED_KEYS);
+            ps.setInt(1, polynomial.degree);
+            ps.setLong(2, SubmissionId);
+            ps.setBoolean(3, isIntermediate);
+            if(isIntermediate){
+                ps.setInt(4, FactoringSequencePosition);
+                ps.setInt(5, Solution.getNumerator());
+                ps.setInt(6, Solution.getDenominator());
             }
-            return null;
-        });
+            else{
+                ps.setNull(4, Types.INTEGER);
+                ps.setNull(5, Types.INTEGER);
+                ps.setNull(6, Types.INTEGER);
+            }
+            return ps;
+        }, keyHolder);
+        Long PolyId = keyHolder.getKey().longValue();
 
-       jdbctemplate.batchUpdate("INSERT INTO PolynomialTerms (Coefficient, Variable, Exponent, PolynomialID) VALUES (?, ?, ?, ?)", new BatchPreparedStatementSetter() {
+        jdbctemplate.batchUpdate(polynomialTermInsertSQL, new BatchPreparedStatementSetter() {
             @Override
             public void setValues(PreparedStatement ps, int i) throws SQLException {
-                ps.setDouble(1, submission.getInputPolynomial().terms.get(i).getCoefficient());
-                ps.setString(2, submission.getInputPolynomial().terms.get(i).getVariable());
-                ps.setInt(3, submission.getInputPolynomial().terms.get(i).getExponent());
-                ps.setLong(4, PolyID);
+                ps.setDouble(1, polynomial.terms.get(i).getCoefficient());
+                ps.setString(2, polynomial.terms.get(i).getVariable());
+                ps.setInt(3, polynomial.terms.get(i).getExponent());
+                ps.setLong(4, PolyId);
             }
 
             @Override
             public int getBatchSize() {
-                return submission.getInputPolynomial().terms.size();
+                return polynomial.terms.size();
             }
         });
+        return PolyId;
+    }
 
-        jdbctemplate.batchUpdate("INSERT INTO PossibleRationalZeroes (Numerator, Denominator, PolynomialId) VALUES (?, ?, ?)", new BatchPreparedStatementSetter() {
+    @Override
+    public Boolean save(Submission submission) throws DataAccessException {
+        String submissionInsertSQL = "INSERT INTO Submissions (UserID, TimeSubmitted) VALUES (?,  ?)";
+        String submissionUpdateSQL = "UPDATE Submissions SET InputPolynomialId = (?) WHERE Id = (?)";
+        String submissionPRZInsertSql = "INSERT INTO PossibleRationalZeroes (Numerator, Denominator, SubmissionId) VALUES (?, ?, ?)";
+        KeyHolder submissionKeyholder = new GeneratedKeyHolder();
+
+        //Insert Input Polynomial then alter submission table entry to point to it
+        jdbctemplate.update(con -> {
+            PreparedStatement ps = con.prepareStatement(submissionInsertSQL, Statement.RETURN_GENERATED_KEYS);
+            ps.setLong(1, 0);
+            ps.setDate(2, new Date(System.currentTimeMillis()));
+            return ps;
+            }
+                , submissionKeyholder);
+        Long submissionId = submissionKeyholder.getKey().longValue();
+        Long InputPolyId = polynomialSave(submission.getInputPolynomial(),
+                submissionId,
+                false,
+                null,
+                null
+                );
+        jdbctemplate.update(submissionUpdateSQL, InputPolyId, submissionId);
+
+        for(int i = 0; i < submission.IntermediatePolynomials.size(); i++)
+        {
+            polynomialSave(submission.IntermediatePolynomials.get(i),
+                    submissionId,
+                    true,
+                    i + 1,
+                    submission.FactoredZeroes.get(i)
+                    );
+        }
+
+        jdbctemplate.batchUpdate(submissionPRZInsertSql, new BatchPreparedStatementSetter() {
             @Override
             public void setValues(PreparedStatement ps, int i) throws SQLException {
                 ps.setInt(1, submission.PossibleRationalZeroes.get(i).getNumerator());
                 ps.setInt(2, submission.PossibleRationalZeroes.get(i).getDenominator());
-                ps.setLong(3, PolyID);
+                ps.setLong(3, submissionId);
             }
             @Override
             public int getBatchSize() {
@@ -96,8 +156,47 @@ public class SubmissionRepositoryDAO implements ISubmissionRepository {
             }
         });
 
-        jdbctemplate.update("INSERT INTO Submissions (UserID, InputPolynomialId, TimeSubmitted) VALUES (?, ?, ?)", (Object) 0, PolyID, new Date(System.currentTimeMillis()));
-        logger.info("Saving of polynomial with ID = " + PolyID + " completed");
+    //Save the Quadratic Formula Solution pair, if it exists
+        if(submission.QuadraticSolutionPair != null){
+            if(submission.QuadraticSolutionPair.getSolutionType() == QuadraticFormulaSolutionType.TWO_REAL)
+            {
+                jdbctemplate.batchUpdate("INSERT INTO QuadraticFormulaSolutions (ComplexReal, SubmissionId) VALUES (? , ?)",
+                        new BatchPreparedStatementSetter() {
+                            @Override
+                            public void setValues(PreparedStatement ps, int i) throws SQLException {
+                                ps.setDouble(1, submission.QuadraticSolutionPair.getSolutions().get(i).getReal());
+                                ps.setLong(2, submissionId);
+                            }
+
+                            @Override
+                            public int getBatchSize() {
+                                return 2;
+                            }
+                        });
+            }
+            else if (submission.QuadraticSolutionPair.getSolutionType() == QuadraticFormulaSolutionType.TWO_COMPLEX) {
+                jdbctemplate.batchUpdate("INSERT INTO QuadraticFormulaSolutions (ComplexReal, ComplexImaginary, SubmissionId) VALUES (?, ?, ?)",
+                        new BatchPreparedStatementSetter() {
+                            @Override
+                            public void setValues(PreparedStatement ps, int i) throws SQLException {
+                                ps.setDouble(1, submission.QuadraticSolutionPair.getSolutions().get(i).getReal());
+                                ps.setDouble(2, submission.QuadraticSolutionPair.getSolutions().get(i).getImaginary());
+                                ps.setLong(3, submissionId);
+                            }
+
+                            @Override
+                            public int getBatchSize() {
+                                return 2;
+                            }
+                        });
+            }
+            else {
+                jdbctemplate.update("INSERT INTO QuadraticForumulaSolutions (ComplexReal, SubmissionId) VALUES (?, ? )",
+                        submission.QuadraticSolutionPair.getSolutions().get(0).getReal(), submissionId);
+            }
+        }
+
+        logger.info("Saving of submission with ID = " + submissionId + " completed");
         return true;
     }
 
