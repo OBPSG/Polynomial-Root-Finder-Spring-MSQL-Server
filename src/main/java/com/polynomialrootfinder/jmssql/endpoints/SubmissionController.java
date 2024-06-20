@@ -6,8 +6,11 @@ import com.polynomialrootfinder.jmssql.calculator.SyntheticDivisionCalculator;
 import com.polynomialrootfinder.jmssql.models.Polynomial;
 import com.polynomialrootfinder.jmssql.models.RationalNumber;
 import com.polynomialrootfinder.jmssql.models.Submission;
+import com.polynomialrootfinder.jmssql.msqldaos.SubmissionRepositoryDAO;
 import com.polynomialrootfinder.jmssql.respositories.ISubmissionRepository;
 import org.apache.catalina.connector.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,6 +20,7 @@ import java.util.List;
 
 @RestController
 public class SubmissionController {
+    private static final Logger logger = LoggerFactory.getLogger(SubmissionController.class);
     private final ISubmissionRepository repository;
 
 
