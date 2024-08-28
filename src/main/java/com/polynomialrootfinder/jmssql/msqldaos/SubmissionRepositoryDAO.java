@@ -348,15 +348,95 @@ public class SubmissionRepositoryDAO implements ISubmissionRepository {
     }
 
     @Override
-    public int UpdateSubmission(Polynomial newPolynomial) {
+    public int UpdateSubmission(Long id, Submission newSubmission) throws DataAccessException {
+        String QFSolutionsDeleteSql = "DELETE FROM QuadraticFormulaSolutions WHERE SubmissionId = ?";
+        jdbctemplate.update(QFSolutionsDeleteSql, id);
+
+        String PRZSolutionsDeleteSQL = "DELETE FROM PossibleRationalZeroes WHERE SubmissionId = ?";
+        jdbctemplate.update(PRZSolutionsDeleteSQL);
+
+        String PolynomialsDeleteSQL = "DELETE FROM Polynomials WHERE SubmissionId = ?";
+        jdbctemplate.update(PolynomialsDeleteSQL, id);
+
+        Long inputPolyId = polynomialSave(newSubmission.getInputPolynomial(), id,false, 0, null);
+
+        String SubmissionUpdateSQL = "UPDATE Submissions SET TimeSubmitted = ?, InputPolynomialId = ?";
+        jdbctemplate.update(SubmissionUpdateSQL, new Date(System.currentTimeMillis()), inputPolyId);
+
+        for(int i = 0; i < newSubmission.IntermediatePolynomials.size(); i++)
+        {
+            polynomialSave(newSubmission.IntermediatePolynomials.get(i),
+                    id,
+                    true,
+                    i + 1,
+                    newSubmission.FactoredZeroes.get(i)
+            );
+        }
+
+        String submissionPRZInsertSql = "INSERT INTO PossibleRationalZeroes (Numerator, Denominator, SubmissionId) VALUES (?, ?, ?)";
+        jdbctemplate.batchUpdate(submissionPRZInsertSql, new BatchPreparedStatementSetter() {
+            @Override
+            public void setValues(PreparedStatement ps, int i) throws SQLException {
+                ps.setInt(1, newSubmission.PossibleRationalZeroes.get(i).getNumerator());
+                ps.setInt(2, newSubmission.PossibleRationalZeroes.get(i).getDenominator());
+                ps.setLong(3, id);
+            }
+            @Override
+            public int getBatchSize() {
+                return newSubmission.PossibleRationalZeroes.size();
+            }
+        });
+
+        //Save the Quadratic Formula Solution pair, if it exists
+        if(newSubmission.QuadraticSolutionPair != null){
+            if(newSubmission.QuadraticSolutionPair.getSolutionType() == QuadraticFormulaSolutionType.TWO_REAL)
+            {
+                jdbctemplate.batchUpdate("INSERT INTO QuadraticFormulaSolutions (ComplexReal, SubmissionId) VALUES (? , ?)",
+                        new BatchPreparedStatementSetter() {
+                            @Override
+                            public void setValues(PreparedStatement ps, int i) throws SQLException {
+                                ps.setDouble(1, newSubmission.QuadraticSolutionPair.getSolutions().get(i).getReal());
+                                ps.setLong(2, id);
+                            }
+
+                            @Override
+                            public int getBatchSize() {
+                                return 2;
+                            }
+                        });
+            }
+            else if (newSubmission.QuadraticSolutionPair.getSolutionType() == QuadraticFormulaSolutionType.TWO_COMPLEX) {
+                jdbctemplate.batchUpdate("INSERT INTO QuadraticFormulaSolutions (ComplexReal, ComplexImaginary, SubmissionId) VALUES (?, ?, ?)",
+                        new BatchPreparedStatementSetter() {
+                            @Override
+                            public void setValues(PreparedStatement ps, int i) throws SQLException {
+                                ps.setDouble(1, newSubmission.QuadraticSolutionPair.getSolutions().get(i).getReal());
+                                ps.setDouble(2, newSubmission.QuadraticSolutionPair.getSolutions().get(i).getImaginary());
+                                ps.setLong(3, id);
+                            }
+
+                            @Override
+                            public int getBatchSize() {
+                                return 2;
+                            }
+                        });
+            }
+            else {
+                jdbctemplate.update("INSERT INTO QuadraticFormulaSolutions (ComplexReal, SubmissionId) VALUES (?, ? )",
+                        newSubmission.QuadraticSolutionPair.getSolutions().get(0).getReal(), id);
+            }
+        }
+
+        logger.info("Updating of submission with id " + id + " completed"); 
         return 0;
     }
 
     @Override
     public int DeleteSubmission(long submissionToDeleteId) {
-        return 0;
+        String DeletionSql = "DELETE FROM Submissions WHERE ID = ?";
+        jdbctemplate.update(DeletionSql, submissionToDeleteId);
+        return 1;
     }
-
 }
 
 record PRZListSubmissionPair(Long SubmissionId, RationalNumber rn){};

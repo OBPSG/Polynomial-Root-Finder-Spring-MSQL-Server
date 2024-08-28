@@ -76,4 +76,44 @@ public class SubmissionController {
         repository.save(result);
         return result;
     }
+
+    void UpdateSubmission(@RequestParam String id, Polynomial NewInputPolynomial) {
+        Long submissionId = Long.parseLong(id);
+        Polynomial normalizedPolynomial = NewInputPolynomial;
+        normalizedPolynomial.Normalize();
+
+        Submission NewSubmission = new Submission(0, normalizedPolynomial);
+        NewSubmission.setTimeSubmitted(new Date());
+
+        RationalZeroTheoremCalculator RZTCalculator = new RationalZeroTheoremCalculator(normalizedPolynomial);
+        List<RationalNumber> PRZs = RZTCalculator.FindAllPossibleZeroes();
+        NewSubmission.PossibleRationalZeroes = PRZs;
+
+        SyntheticDivisionCalculator SDCalculator =  new SyntheticDivisionCalculator();
+        ArrayList<SyntheticDivisionCalculator.DivisionSequenceResultPair> DivisionResults = SDCalculator.DivideTestingAllZeroes(normalizedPolynomial, PRZs);
+        for(SyntheticDivisionCalculator.DivisionSequenceResultPair DivisionResult: DivisionResults) {
+            NewSubmission.FactoredZeroes.add(DivisionResult.finalZero);
+            NewSubmission.IntermediatePolynomials.add(DivisionResult.reducedPolynomial);
+        }
+
+        Polynomial finalPolynomial = NewSubmission.IntermediatePolynomials.get(NewSubmission.IntermediatePolynomials.size() - 1);
+
+        if (finalPolynomial.degree == 2)
+        {
+            QuadraticFormulaCalculator calculator = new QuadraticFormulaCalculator(
+                    finalPolynomial.terms.get(0).getCoefficient(),
+                    finalPolynomial.terms.get(1).getCoefficient(),
+                    finalPolynomial.terms.get(2).getCoefficient()
+            );
+
+            NewSubmission.QuadraticSolutionPair = calculator.Calculate();
+        }
+
+        int UpdateResult = repository.UpdateSubmission(submissionId, NewSubmission);
+    }
+
+    @DeleteMapping(value = "api/submissions/")
+    void DestroySubmission(@RequestParam String id){
+        int result = repository.DeleteSubmission(Long.parseLong(id));
+    }
 }

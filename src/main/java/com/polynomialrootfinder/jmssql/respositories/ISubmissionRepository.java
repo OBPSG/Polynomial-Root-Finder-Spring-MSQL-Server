@@ -22,7 +22,7 @@ public interface ISubmissionRepository{
     List<Submission> findRecent();
 
     // api/submissions/:id_____|_PUT_________|_Amend a submitted polynomial, recomputing it as appropriate
-    int UpdateSubmission(Polynomial newPolynomial);
+    int UpdateSubmission(Long id, Submission newSubmission);
 
     // api/submissions/:id_____|_DELETE______|_Delete a submission by ID
     int DeleteSubmission(long submissionToDeleteId);
